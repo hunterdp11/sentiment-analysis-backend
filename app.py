@@ -3,6 +3,9 @@ import re
 import pickle
 import random
 import math
+import os
+
+# ------------------ ACTIVATIONS ------------------
 
 def softmax(z):
     exp_z = [math.exp(i - max(z)) for i in z]
@@ -12,43 +15,49 @@ def softmax(z):
 def relu(x):
     return [max(0, i) for i in x]
 
-def relu_derivative(x):
-    return [1 if i > 0 else 0 for i in x]
-
+# ------------------ MODEL CLASS ------------------
 
 class NeuralNetworkScratch:
-    def __init__(self, input_size, hidden_size, output_size, lr=0.01, epochs=300):
-        self.lr = lr
-        self.epochs = epochs
+    def __init__(self):
         self.W1 = []
         self.b1 = []
         self.W2 = []
         self.b2 = []
 
-    def train(self, X, y):
-        pass  # not needed for inference
-
     def predict(self, X):
         predictions = []
         for x in X:
-            z1 = [sum(w * xi for w, xi in zip(ws, x)) + b for ws, b in zip(self.W1, self.b1)]
+            z1 = [
+                sum(w * xi for w, xi in zip(ws, x)) + b
+                for ws, b in zip(self.W1, self.b1)
+            ]
             a1 = relu(z1)
 
-            z2 = [sum(w * ai for w, ai in zip(ws, a1)) + b for ws, b in zip(self.W2, self.b2)]
-            probs = softmax(z2)
+            z2 = [
+                sum(w * ai for w, ai in zip(ws, a1)) + b
+                for ws, b in zip(self.W2, self.b2)
+            ]
 
+            probs = softmax(z2)
             predictions.append(probs.index(max(probs)))
+
         return predictions
 
 
-# ---------- LOAD MODEL FILE ----------
-# (We will save model in next step)
+# ------------------ LOAD MODEL ------------------
+
 with open("model.pkl", "rb") as f:
     model, vocab, label_map = pickle.load(f)
 
+# 🔴 CRITICAL SAFETY CHECK
+assert hasattr(model, "W1") and model.W1, "Model weights not loaded"
+
+# ------------------ FLASK APP ------------------
+
 app = Flask(__name__)
 
-# ---------- TEXT PREPROCESSING ----------
+# ------------------ PREPROCESSING ------------------
+
 def preprocess(text):
     text = text.lower()
     text = re.sub(r'[^a-z\s]', '', text)
@@ -58,11 +67,20 @@ def vectorize(text):
     words = text.split()
     return [words.count(w) for w in vocab]
 
-# ---------- API ENDPOINT ----------
+# ------------------ HEALTH CHECK (IMPORTANT) ------------------
+
+@app.route("/")
+def health():
+    return "Backend is running"
+
+# ------------------ PREDICT API ------------------
 
 @app.route("/predict", methods=["POST"])
 def predict():
-    data = request.json
+    data = request.get_json()
+    if not data or "text" not in data:
+        return jsonify({"error": "No text provided"}), 400
+
     text = data["text"]
 
     clean = preprocess(text)
@@ -71,7 +89,6 @@ def predict():
     prediction = model.predict([vec])[0]
     sentiment = label_map[prediction]
 
-    import random
     confidence = round(random.uniform(65, 90), 2)
 
     return jsonify({
@@ -79,9 +96,8 @@ def predict():
         "confidence": confidence
     })
 
+# ------------------ START SERVER ------------------
 
 if __name__ == "__main__":
-    import os
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
-
